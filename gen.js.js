@@ -7,6 +7,9 @@ module.exports = {
     symbol: (root, instance, ast) => {
         //
     },
+    lookup: (root, instance, ast) => {
+        //
+    },
     path: (root, instance, ast) => {
         //
     },
@@ -18,6 +21,6 @@ module.exports = {
     },
 
     visit: (root, instance, ast) => {
-        module.exports[ast.astType()](root, instance, ast);
+        module.exports[ast.__type()](root, instance, ast);
     },
 };
