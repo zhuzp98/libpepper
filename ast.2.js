@@ -19,31 +19,31 @@ module.exports = {
         };
     },
 
-    pathOut: (type, source, name) => {
+    pathOut: (upper, name, type) => {
         return {
             __type: 'pathOut',
-            type: type,
-            source: source,
+            upper: upper,
             name: name,
+            type: type,
         };
     },
 
-    pathIn: (source, name) => {
+    pathIn: (upper, name) => {
         return {
             __type: 'pathIn',
-            source: source,
+            upper: upper,
             name: name,
         };
     },
 
-    callOut: (type, callee, instance, outArgs, inArgs) => {
+    callOut: (callee, instance, outArgs, inArgs, type) => {
         return {
             __type: 'callOut',
-            type: type,
             callee: callee,
             instance: instance,
             outArgs: outArgs,
             inArgs: inArgs,
+            type: type,
         };
     },
 

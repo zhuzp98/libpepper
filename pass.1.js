@@ -1,53 +1,65 @@
 'use strict';
 
+const typeinfo = require('./typeinfo');
 const ast2 = require('./ast.2');
 
 module.exports = {
     literalOut: (root, instance, ast) => {
-        return ast2.literal(ast.type, ast.value);
+        return ast2.literal(
+            ast.value, ast.type
+        );
     },
+
     literalIn: (root, instance, ast, type) => {
         throw 1;
     },
 
     symbolOut: (root, instance, ast) => {
-        throw 1;
-    },
-    symbolIn: (root, instance, ast, type) => {
-        instance.add(ast.name, ast.mode, type);
+        instance.add(
+            ast.name, ast.mode
+        );
 
-        return ast2.pathIn(ast2.self(instance), ast.name);
+        return ast2.literal(
+            undefined, 'void'
+        );
+    },
+
+    symbolIn: (root, instance, ast, type) => {
+        instance.add(
+            ast.name, ast.mode
+        );
+        instance.addType(
+            ast.name, type
+        );
+
+        return ast2.pathIn(
+            ast2.self(instance), ast.name
+        );
     },
 
     lookup: (root, instance, ast) => {
-        let source;
+        let upper;
 
         switch (ast.mode) {
             case 'global': {
-                source = ast2.root(root);
+                upper = ast2.root(root);
 
                 break;
             }
             case 'mixed': {
-                source = ast2.self(instance);
+                upper = ast2.self(instance);
 
-                while (
-                    !source.type.modes[ast.name] && (
-                        source.type.modes.__parent === 'const'
-                        || source.type.modes.__parent === 'var'
-                    )
-                ) {
-                    source = ast2.pathOut(
-                        source.type.types.__parent,
-                        source,
-                        '__parent'
+                while (!upper.type.modes[ast.name]) {
+                    upper = ast2.pathOut(
+                        upper, '__parent',
+                        upper.type.accessOut('__parent')
                     );
                 }
 
                 break;
             }
             case 'local': {
-                source = ast2.self(instance);
+                upper = ast2.self(instance);
 
                 break;
             }
@@ -56,110 +68,173 @@ module.exports = {
             }
         }
 
-        if (!source.type.modes[ast.name]) {
+        if (!upper.type.modes[ast.name]) {
             throw 1;
         }
 
-        return source;
+        return upper;
     },
+
     lookupOut: (root, instance, ast) => {
-        const source = module.exports.lookup(root, instance, ast);
+        const upper = module.exports.lookup(
+            root, instance, ast
+        );
 
-        if (
-            source.type.modes[ast.name] === 'const'
-            || source.type.modes[ast.name] === 'var'
-        ) {
-            return ast2.pathOut(
-                source.type.types[ast.name],
-                source,
-                ast.name
-            );
-        } else {
-            throw 1;
-        }
+        return ast2.pathOut(
+            upper, ast.name,
+            upper.type.accessOut(ast.name)
+        );
     },
-    lookupIn: (root, instance, ast, type) => {
-        const source = module.exports.lookup(root, instance, ast);
 
-        if (
-            (
-                source.type.modes[ast.name] === 'out'
-                || source.type.modes[ast.name] === 'var'
-            ) && source.type.types[ast.name] === type // TODO: type checking
-        ) {
-            return ast2.pathIn(
-                source,
-                ast.name
-            );
-        } else {
-            throw 1;
-        }
+    lookupIn: (root, instance, ast, type) => {
+        const upper = module.exports.lookup(
+            root, instance, ast
+        );
+
+        upper.type.accessIn(
+            ast.name,
+            type
+        );
+
+        return ast2.pathIn(
+            upper, ast.name
+        );
     },
 
     pathOut: (root, instance, ast) => {
-        const source = module.exports.visitOut(root, instance, ast.source);
+        const upper = module.exports.visitOut(
+            root, instance, ast.upper
+        );
 
-        if (
-            source.type.modes[ast.name] === 'const'
-            || source.type.modes[ast.name] === 'var'
-        ) {
-            return ast2.pathOut(
-                source.type.types[ast.name],
-                source,
-                ast.name
-            );
-        } else {
-            throw 1;
-        }
+        return ast2.pathOut(
+            upper, ast.name,
+            upper.type.accessOut(ast.name)
+        );
     },
+
     pathIn: (root, instance, ast, type) => {
-        const source = module.exports.visitOut(root, instance, ast.source);
+        const upper = module.exports.visitOut(
+            root, instance, ast.upper
+        );
+
+        upper.type.accessIn(
+            ast.name,
+            type
+        );
+
+        return ast2.pathIn(
+            upper, ast.name
+        );
+    },
+
+    call: (root, instance, ast, before, after, builder) => {
+        const callee = module.exports.visitOut(
+            root, instance, ast.callee
+        );
+        const closure = callee.type;
 
         if (
-            (
-                source.type.modes.__parent === 'out'
-                || source.type.modes.__parent === 'var'
-            ) && source.type.types[ast.name] === type // TODO: type checking
+            closure.__type !== 'closure'
+            || ast.args.length !== closure.params.length
         ) {
-            return ast2.pathIn(
-                source,
-                ast.name
-            );
-        } else {
             throw 1;
         }
+
+        let child = typeinfo.instance();
+
+        child.addInit(
+            '__parent', 'var',
+            instance
+        ); // TODO: mode?
+
+        before(child);
+
+        const outArgs = {};
+        for (const i in closure.paramNames) {
+            if (
+                closure.paramModes[i] === 'const'
+                || closure.paramModes[i] === 'var'
+            ) {
+                outArgs[i] = module.exports.visitOut(
+                    root, instance, ast.args[i]
+                );
+
+                child.addInit(
+                    closure.paramNames[i], closure.paramModes[i],
+                    outArgs[i].type
+                );
+            } else {
+                child.add(
+                    closure.paramNames[i], closure.paramModes[i]
+                );
+            }
+        }
+
+        child = closure.add(root, child, module.exports.visitOut);
+
+        const inArgs = {};
+        for (const i in closure.paramNames) {
+            if (
+                closure.paramModes[i] === 'out'
+                || closure.paramModes[i] === 'var'
+            ) {
+                inArgs[i] = module.exports.visitIn(
+                    root, instance, ast.args[i],
+                    child.accessOut(closure.paramNames[i])
+                );
+            }
+        }
+
+        after(child);
+
+        return builder(callee, child, outArgs, inArgs);
     },
 
-    call: (instance, ast, before, after) => {
-        // const callee = module.exports.visitOut(
-        //     root, instance, ast.callee
-        // );
-        // const closure = module.exports.visitOut(
-        //     root, instance, ast.closure
-        // );
-
-        // // const initMembers = {};
-
-        // if (ast.args.length !== callee.params.length) {
-        //     throw 1;
-        // }
-
-        // for (const i in ast.args) {
-        //     //
-        // }
-    },
     callOut: (root, instance, ast) => {
-        // TODO
+        let type;
+
+        return module.exports.call(
+            root, instance, ast,
+            (child) => {
+                child.add(
+                    '__result', 'out'
+                );
+            },
+            (child) => {
+                type = child.accessOut('__result');
+            },
+            (callee, child, outArgs, inArgs) => {
+                return ast2.callOut(callee, child, outArgs, inArgs, type);
+            }
+        );
     },
+
     callIn: (root, instance, ast, type) => {
-        // TODO
+        return module.exports.call(
+            root, instance, ast,
+            (child) => {
+                child.addInit(
+                    '__input', 'in',
+                    type
+                );
+            },
+            (child) => {
+                // nothing
+            },
+            (callee, child, outArgs, inArgs) => {
+                return ast2.callIn(callee, child, outArgs, inArgs);
+            }
+        );
     },
 
     codeOut: (root, instance, ast) => {
-        // return ast;
+        return typeinfo.closure(
+            instance, ast.paramNames, ast.paramModes, ast.impl1
+        );
     },
+
     codeIn: (root, instance, ast, type) => {
-        // throw 1;
+        throw 1;
     },
 
     visitOut: (root, instance, ast) => {
@@ -167,9 +242,11 @@ module.exports = {
             root, instance, ast
         );
     },
+
     visitIn: (root, instance, ast, type) => {
-        module.exports[ast.__type + 'In'](
-            root, instance, ast, type
+        return module.exports[ast.__type + 'In'](
+            root, instance, ast,
+            type
         );
     },
 };

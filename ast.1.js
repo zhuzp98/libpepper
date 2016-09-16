@@ -1,11 +1,11 @@
 'use strict';
 
 module.exports = {
-    literal: (type, value) => {
+    literal: (value, type) => {
         return {
             __type: 'literal',
-            type: type,
             value: value,
+            type: type,
         };
     },
 
@@ -25,10 +25,10 @@ module.exports = {
         };
     },
 
-    path: (source, name) => {
+    path: (upper, name) => {
         return {
             __type: 'path',
-            source: source,
+            upper: upper,
             name: name,
         };
     },
@@ -41,11 +41,12 @@ module.exports = {
         };
     },
 
-    code: (params, ast) => {
+    code: (paramNames, paramModes, impl1) => {
         return {
             __type: 'code',
-            params: params,
-            ast: ast,
+            paramNames: paramNames,
+            paramModes: paramModes,
+            impl1: impl1,
         };
     },
 };
